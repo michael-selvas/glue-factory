@@ -6,6 +6,7 @@ Author: Paul-Edouard Sarlin (skydes)
 
 import argparse
 import copy
+import os
 import re
 import shutil
 import signal
@@ -34,6 +35,7 @@ from .utils.tools import (
     fork_rng,
     set_seed,
 )
+from torch.profiler import profile, record_function, ProfilerActivity
 
 # @TODO: Fix pbar pollution in logs
 # @TODO: add plotting during evaluation
@@ -453,7 +455,9 @@ def training(rank, conf, output_dir, args):
                     getattr(loader.dataset, conf.train.dataset_callback_fn)(
                         conf.train.seed + epoch
                     )
-        for it, data in enumerate(train_loader):
+        for it, data in enumerate(
+            tqdm(train_loader, desc="Training", ascii=True, disable=False)
+        ):
             tot_it = (len(train_loader) * epoch + it) * (
                 args.n_gpus if args.distributed else 1
             )
@@ -666,7 +670,15 @@ def main_worker(rank, conf, output_dir, args):
         ):
             training(rank, conf, output_dir, args)
     else:
-        training(rank, conf, output_dir, args)
+        with profile(
+            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA],
+            record_shapes=True,
+            on_trace_ready=torch.profiler.tensorboard_trace_handler("./profiler_logs"),  # 로그 저장 경로
+            with_stack=True,
+            profile_memory=True
+        ) as prof:
+            training(rank, conf, output_dir, args)
+        
 
 
 if __name__ == "__main__":
@@ -700,8 +712,17 @@ if __name__ == "__main__":
     parser.add_argument("--log_it", "--log_it", action="store_true")
     parser.add_argument("--no_eval_0", action="store_true")
     parser.add_argument("--run_benchmarks", action="store_true")
+    parser.add_argument("--n_gpus", type=int, help="Number of GPUs to use.")
+    parser.add_argument(
+        "--devices", type=str, help="Comma-separated list of GPU device IDs to use."
+    )
     parser.add_argument("dotlist", nargs="*")
     args = parser.parse_intermixed_args()
+
+    if args.devices:
+        os.environ["CUDA_VISIBLE_DEVICES"] = args.devices
+        logger.info(f"Using devices: {args.devices}")
+        logger.info(f"device cuda count = {torch.cuda.device_count()}")
 
     logger.info(f"Starting experiment {args.experiment}")
     output_dir = Path(settings.TRAINING_PATH, args.experiment)
@@ -726,6 +747,9 @@ if __name__ == "__main__":
         shutil.copytree(mod_dir, output_dir / module, dirs_exist_ok=True)
     if args.distributed:
         args.n_gpus = torch.cuda.device_count()
+        if args.n_gpus == 0:
+            raise RuntimeError("Cannot run distributed training with no GPUs.")
+        logger.info(f"Found {args.n_gpus} GPUs for distributed training.")
         args.lock_file = output_dir / "distributed_lock"
         if args.lock_file.exists():
             args.lock_file.unlink()

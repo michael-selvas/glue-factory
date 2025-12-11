@@ -9,8 +9,8 @@ data:
     preprocessing:
         resize: 640
         square_pad: True
-    batch_size: 160
-    num_workers: 15
+    batch_size: 140
+    num_workers: 8
 model:
     name: gluefactory.models.two_view_pipeline
     extractor:

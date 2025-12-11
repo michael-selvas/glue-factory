@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import time
 from joblib import Parallel, delayed
 from pytlsd import lsd
 
@@ -8,10 +9,10 @@ from ..base_model import BaseModel
 
 class LSD(BaseModel):
     default_conf = {
-        "min_length": 15,
+        "min_length": 30,
         "max_num_lines": None,
         "force_num_lines": False,
-        "n_jobs": 4,
+        "n_jobs": 8,
     }
     required_data_keys = ["image"]
 

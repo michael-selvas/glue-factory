@@ -6,8 +6,8 @@ data:
         patch_shape: [640, 480]
     photometric:
         p: 0.75
-    train_size: 900000
-    val_size: 1000
+    train_size: 800000
+    val_size: 2000
     batch_size: 140  # 20 per 10GB of GPU mem (12 for triplet)
     num_workers: 8
 model:
@@ -19,12 +19,12 @@ model:
             name: gluefactory.models.extractors.superpoint_open
             # name: disk
             # chunk: 10
-            max_num_keypoints: 1000
+            max_num_keypoints: 500
             force_num_keypoints: true
             trainable: False
         line_extractor:
             name: gluefactory.models.lines.lsd
-            max_num_lines: 250
+            max_num_lines: 100
             force_num_lines: True
             min_length: 15
             trainable: False

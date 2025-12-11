@@ -1,15 +1,18 @@
 data:
-    name: homographies
+    name: render
     homography:
         difficulty: 0.7
         max_angle: 45
         patch_shape: [640, 480]
     photometric:
         p: 0.75
-    train_size: 900000
-    val_size: 1000
-    batch_size: 140  # 20 per 10GB of GPU mem (12 for triplet)
-    num_workers: 8
+    train_size: 40000
+    val_size: 4000
+    preprocessing:
+        resize: 1024
+        square_pad: True
+    batch_size: 40  # 10 per 10GB of GPU mem (12 for triplet)
+    num_workers: 10
 model:
     name: gluefactory.models.two_view_pipeline
     extractor:
@@ -37,12 +40,13 @@ model:
     descriptor:
         name: null
     ground_truth:
-        name: gluefactory.models.matchers.homography_matcher
+        name: gluefactory.models.matchers.3d_render_matcher
         trainable: False
         use_points: True
         use_lines: True
         th_positive: 3
         th_negative: 5
+        line_perp_dist_th: 3
     matcher:
         name: gluefactory.models.matchers.gluestick
         input_dim: 256  # 128 for DISK
@@ -56,10 +60,10 @@ model:
         checkpointed: true
 train:
     seed: 0
-    epochs: 100
-    log_every_iter: 200
-    eval_every_iter: 350
-    save_every_iter: 700
+    epochs: 20
+    log_every_iter: 5
+    eval_every_iter: 200
+    save_every_iter: 500
     lr: 1e-4
     lr_schedule:
         type: exp  # exp or multi_step

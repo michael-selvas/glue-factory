@@ -2,6 +2,7 @@ import collections.abc as collections
 from pathlib import Path
 from typing import Optional, Tuple
 
+import os
 import cv2
 import kornia
 import numpy as np
@@ -10,7 +11,14 @@ import torch.nn.functional as F
 from omegaconf import OmegaConf
 
 from ..geometry.wrappers import Camera
-
+try:
+    import OpenEXR
+    import Imath
+    HAS_OPENEXR = True
+except ImportError:
+    print("Warning: OpenEXR not found. EXR 파일을 직접 읽을 수 없습니다.")
+    print("대신 OpenCV로 EXR 파일 읽기를 시도합니다.")
+    HAS_OPENEXR = False
 
 class ImagePreprocessor:
     default_conf = {
@@ -116,6 +124,83 @@ def read_image(path: Path, grayscale: bool = False) -> np.ndarray:
         image = image[..., ::-1]
     return image
 
+
+def read_exr_opencv(exr_path):
+    """
+    OpenCV를 사용하여 EXR 파일 읽기 (OpenEXR이 없을 때)
+    """
+    try:
+        # OpenCV로 EXR 읽기 (32비트 부동소수점)
+        img = cv2.imread(exr_path, cv2.IMREAD_ANYCOLOR | cv2.IMREAD_ANYDEPTH)
+        if img is None:
+            raise ValueError(f"파일을 읽을 수 없습니다: {exr_path}")
+        
+        # BGR to RGB 변환 (OpenCV는 BGR 순서)
+        if len(img.shape) == 3 and img.shape[2] == 3:
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        
+        return img
+    except Exception as e:
+        print(f"OpenCV로 EXR 읽기 실패: {e}")
+        return None
+
+def read_exr_openexr(exr_path):
+    """
+    OpenEXR 라이브러리를 사용하여 EXR 파일 읽기
+    """
+    try:
+        exr_file = OpenEXR.InputFile(exr_path)
+        header = exr_file.header()
+        
+        # 이미지 크기 가져오기
+        dw = header['dataWindow']
+        size = (dw.max.x - dw.min.x + 1, dw.max.y - dw.min.y + 1)
+        
+        # 채널 정보 가져오기
+        channels = list(header['channels'].keys())
+        # print(f"EXR 채널: {channels}")
+        
+        # RGB 채널 읽기
+        if 'R' in channels and 'G' in channels and 'B' in channels:
+            r_str = exr_file.channel('R', Imath.PixelType(Imath.PixelType.FLOAT))
+            g_str = exr_file.channel('G', Imath.PixelType(Imath.PixelType.FLOAT))  
+            b_str = exr_file.channel('B', Imath.PixelType(Imath.PixelType.FLOAT))
+            
+            # 바이트 문자열을 numpy 배열로 변환
+            r = np.frombuffer(r_str, dtype=np.float32).reshape(size[1], size[0])
+            g = np.frombuffer(g_str, dtype=np.float32).reshape(size[1], size[0])
+            b = np.frombuffer(b_str, dtype=np.float32).reshape(size[1], size[0])
+            
+            # RGB 이미지로 결합
+            img = np.stack([r, g, b], axis=-1)
+            return img
+        else:
+            print(f"RGB 채널을 찾을 수 없습니다. 사용 가능한 채널: {channels}")
+            return None
+            
+    except Exception as e:
+        print(f"OpenEXR로 EXR 읽기 실패: {e}")
+        return None
+
+def read_exr(path: Path):
+    """
+    EXR 파일 읽기 (사용 가능한 라이브러리 자동 선택)
+    """
+    exr_path = str(path)
+    if not os.path.exists(exr_path):
+        print(f"파일이 존재하지 않습니다: {exr_path}")
+        return None
+        
+    # print(f"EXR 파일 읽기: {exr_path}")
+    
+    # OpenEXR이 있으면 우선 사용
+    if HAS_OPENEXR:
+        result = read_exr_openexr(exr_path)
+        if result is not None:
+            return result
+    
+    # OpenEXR이 실패하거나 없으면 OpenCV 사용
+    return read_exr_opencv(exr_path)
 
 def numpy_image_to_torch(image: np.ndarray) -> torch.Tensor:
     """Normalize the image tensor and reorder the dimensions."""
